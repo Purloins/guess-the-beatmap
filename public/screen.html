@@ -109,6 +109,7 @@
   <div class="stars"></div>
   <div class="layer"><div id="bg"></div></div>
   <div class="layer" id="bgDim"></div>
+  <canvas id="game" width="1920" height="1080" class="hidden"></canvas>
 
   <section class="v" id="v-lobby">
     <div class="wrap">
@@ -127,7 +128,6 @@
   </section>
 
   <section class="v" id="v-q">
-    <canvas id="game" width="1920" height="1080" class="hidden"></canvas>
     <div id="scoreCard" class="hidden"></div>
     <div class="note hidden" id="replayMsg" style="font-size:34px;max-width:1100px"></div>
     <div class="topbar"><div class="qlabel galaxy"><span class="typeTag hidden" id="typeTag"></span><span id="qLabel"></span></div><div class="pipsL" id="pips"></div></div>
@@ -164,6 +164,8 @@
 <script type="module">
 import { api, syncClock, now, $, esc, fmtLen, fmtSec, stageOf } from '/common.js';
 import { createReplay } from '/replay.js';
+import { unlockAudio, audioNow, ready as hsReady, play as playHit } from '/hitsounds.js';
+let hsUpTo = -Infinity, hsIdx = 0, hsKey = '';
 let replay = null, replayKey = '';
 const typeOf = () => L?.question?.type || 'audio';
 const GRADE = { XH: ['SS', '#dfe6ee'], X: ['SS', '#ffd66b'], SH: ['S', '#dfe6ee'], S: ['S', '#ffd66b'], A: ['A', '#88da20'], B: ['B', '#4fc3f7'], C: ['C', '#b07cf0'], D: ['D', '#ff6b6b'] };
@@ -179,16 +181,42 @@ function scoreCard(q) {
     <div class="hits"><div class="hit"><span style="color:#66ccff">300</span><b>${sc.n300}</b></div><div class="hit"><span style="color:#88da20">100</span><b>${sc.n100}</b></div><div class="hit"><span style="color:#ffd66b">50</span><b>${sc.n50}</b></div><div class="hit"><span style="color:#ff6b6b">MISS</span><b>${sc.miss}</b></div></div>
     <div class="who"><img src="${esc(sc.avatar)}" alt="">${flag}<b>${esc(sc.player)}</b><span class="muted" style="margin-left:auto">#1 on the leaderboard · ${esc(sc.date)}</span></div>`;
 }
+let revealAt = 0;
 function loop() {
   requestAnimationFrame(loop);
-  if (!replay || typeOf() !== 'replay' || L?.state?.phase !== 'question') return;
+  const ph = L?.state?.phase;
+  if (!replay || replayKey !== `q${L?.state?.qIndex}`) return;
   const s = L.state, t = now();
-  if (t < s.startsAt) return;
-  let gt = replay.start + Math.min(t, s.deadline) - s.startsAt;
-  if (gt > replay.last + 1500) gt = replay.first - 500 + ((gt - replay.first) % (replay.last + 1500 - replay.first)); // loop the map if it ends
   const ctx = $('#game').getContext('2d');
-  ctx.clearRect(0, 0, 1920, 1080);
-  replay.draw(ctx, 1920, 1080, gt);
+  let gt, sound;
+  if (ph === 'question' && typeOf() === 'replay') {
+    if (t < s.startsAt) return;
+    gt = replay.start + Math.min(t, s.deadline) - s.startsAt;
+    if (gt > replay.last + 1500) gt = replay.first - 500 + ((gt - replay.first) % (replay.last + 1500 - replay.first)); // loop the map if it ends
+    ctx.clearRect(0, 0, 1920, 1080);
+    replay.draw(ctx, 1920, 1080, gt);
+    sound = t < s.deadline;
+  } else if (ph === 'reveal') {
+    // in sync with the song: the preview audio starts at the map's preview point
+    const synced = replay.preview != null && !audio.paused && audio.currentTime > 0;
+    gt = synced ? replay.preview + audio.currentTime * 1000 : replay.start + (t - revealAt);
+    ctx.clearRect(0, 0, 1920, 1080);
+    ctx.fillStyle = 'rgba(12,12,18,.55)'; ctx.fillRect(0, 0, 1920, 1080);
+    ctx.save(); ctx.translate(0, 30);
+    replay.draw(ctx, 1920, 640, gt); // smaller playfield above the answer card
+    ctx.restore();
+    sound = synced;
+  } else return;
+  // hitsounds: schedule everything due in the next 120ms on the audio clock
+  if (hsReady() && sound) {
+    if (hsKey !== key || gt < hsUpTo - 50) { hsKey = key; hsUpTo = gt; hsIdx = replay.events.findIndex((e) => e.t > gt); if (hsIdx < 0) hsIdx = replay.events.length; }
+    const ahead = gt + 120;
+    while (hsIdx < replay.events.length && replay.events[hsIdx].t <= ahead) {
+      const ev = replay.events[hsIdx++];
+      playHit(ev, audioNow() + Math.max(0, (ev.t - gt) / 1000));
+    }
+    hsUpTo = ahead;
+  }
 }
 requestAnimationFrame(loop);
 
@@ -200,10 +228,10 @@ const audio = new Audio();
 audio.preload = 'auto';
 let L = null, key = '', lastStage = -2, stopAt = null, autoRevealSent = '';
 const BLUR = [42, 22, 9];           // background blur per hint stage (px)
-const CLIP = [4, 8, 0];             // seconds of audio per stage (0 = whole preview, looped)
+const CLIP = [0, 0, 0];             // seconds of audio per stage (0 = whole preview, looped for the full question)
 const show = (v) => document.querySelectorAll('.v').forEach((x) => x.classList.toggle('on', x.id === 'v-' + v));
 
-$('#enable').onclick = () => { $('#enable').remove(); audio.play().then(() => audio.pause()).catch(() => {}); };
+$('#enable').onclick = () => { $('#enable').remove(); unlockAudio(); audio.play().then(() => audio.pause()).catch(() => {}); };
 
 const joinUrl = location.origin.replace(/^https?:\/\//, '');
 $('#joinUrl').textContent = joinUrl;
@@ -236,6 +264,23 @@ async function poll() {
   }
 }
 
+// Load (once per question) the map's sanitized .osu for the gameplay renderer.
+function loadReplay(qi, visibleErrors) {
+  const k = `q${qi}`;
+  if (replayKey === k) return;
+  replayKey = k; replay = null;
+  $('#game').getContext('2d').clearRect(0, 0, 1920, 1080);
+  if (visibleErrors) { $('#replayMsg').classList.remove('hidden'); $('#replayMsg').textContent = 'Loading gameplay…'; }
+  const load = (tries) => fetch(`/api/hint?kind=osu&q=${qi}`, { credentials: 'same-origin' })
+    .then(async (r) => (r.ok ? r.text() : Promise.reject(new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`))))
+    .then((txt) => { if (replayKey === k) { replay = createReplay(txt); $('#replayMsg').classList.add('hidden'); } })
+    .catch((e) => {
+      if (tries > 0 && replayKey === k) return setTimeout(() => load(tries - 1), 1500);
+      if (visibleErrors && replayKey === k) $('#replayMsg').innerHTML = `⚠️ Couldn't load gameplay for this map<br><span class="muted" style="font-size:24px">${esc(e.message)}</span>`;
+    });
+  load(2);
+}
+
 function onPhase() {
   const s = L.state;
   lastStage = -2;
@@ -256,26 +301,19 @@ function onPhase() {
     document.querySelector('.feed').classList.toggle('side', type === 'replay');
     $('#typeTag').textContent = type === 'replay' ? '🎮 REPLAY' : type === 'score' ? '🏆 SCORE SCREEN' : '';
     if (type === 'score') $('#scoreCard').innerHTML = scoreCard(L.question);
-    if (type === 'replay' && replayKey !== key) {
-      replayKey = key; replay = null;
-      $('#game').getContext('2d').clearRect(0, 0, 1920, 1080);
-      $('#replayMsg').classList.remove('hidden'); $('#replayMsg').textContent = 'Loading gameplay…';
-      const load = (tries) => fetch(`/api/hint?kind=osu&q=${s.qIndex}`, { credentials: 'same-origin' })
-        .then(async (r) => (r.ok ? r.text() : Promise.reject(new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`))))
-        .then((txt) => { replay = createReplay(txt); $('#replayMsg').classList.add('hidden'); })
-        .catch((e) => {
-          if (tries > 0 && replayKey === key) return setTimeout(() => load(tries - 1), 1500);
-          $('#replayMsg').innerHTML = `⚠️ Couldn't load gameplay for this map<br><span class="muted" style="font-size:24px">${esc(e.message)}</span>`;
-        });
-      load(2);
-    }
+    if (type === 'replay') loadReplay(s.qIndex, true);
   }
   if (s.phase !== 'question') $('#replayMsg').classList.add('hidden');
   if (s.phase === 'reveal' && L.question) {
-    $('#game').classList.add('hidden'); $('#scoreCard').classList.add('hidden');
+    $('#scoreCard').classList.add('hidden');
     setBg(0, true);
     playClip(2);
+    revealAt = now();
+    hsKey = '';
+    loadReplay(s.qIndex, false);
+    $('#game').classList.remove('hidden');
   }
+  if (s.phase !== 'question' && s.phase !== 'reveal') $('#game').classList.add('hidden');
   if (s.phase === 'lobby') { setBg(0, false); audio.pause(); }
   if (s.phase === 'leaderboard' || s.phase === 'ended') { setBg(14, true); }
 }
@@ -303,7 +341,7 @@ function render() {
       lastStage = st;
       if (typeOf() === 'audio') {
         setBg(BLUR[Math.min(st, BLUR.length - 1)], true);
-        playClip(Math.min(st, CLIP.length - 1));
+        if (st === 0 || audio.paused) playClip(Math.min(st, CLIP.length - 1)); // start once, keep looping through the hint stages
       }
       if (st >= 1) {
         $('#hStats').innerHTML = [['BPM', q.bpm], ['Length', fmtLen(q.length)], ['★ SR', q.sr.toFixed(2)], ['CS', q.cs], ['AR', q.ar], ['OD', q.od]]

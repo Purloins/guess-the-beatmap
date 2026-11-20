@@ -15,7 +15,7 @@ function parse(text) {
       if (i > 0) d[sec === 'General' ? 'general' : 'diff'][line.slice(0, i).trim()] = line.slice(i + 1).trim();
     } else if (sec === 'TimingPoints') {
       const p = line.split(',');
-      d.timing.push({ t: +p[0], bl: +p[1], meter: +(p[2] || 4), unin: p.length < 7 || p[6] === '1', kiai: (+(p[7] || 0) & 1) === 1 });
+      d.timing.push({ t: +p[0], bl: +p[1], meter: +(p[2] || 4), vol: +(p[5] || 100), unin: p.length < 7 || p[6] === '1', kiai: (+(p[7] || 0) & 1) === 1 });
     } else if (sec === 'Colours') {
       const [k, v] = line.split(':');
       if (k.trim().startsWith('Combo')) d.colours.push(v.split(',').map(Number));
@@ -117,7 +117,7 @@ export function createReplay(text) {
   let ci = 0, num = 0;
   d.objects.forEach((p, k) => {
     const typ = +p[3];
-    const o = { x: +p[0], y: +p[1], t: +p[2], kind: typ & 8 ? 'spinner' : typ & 2 ? 'slider' : 'circle' };
+    const o = { x: +p[0], y: +p[1], t: +p[2], kind: typ & 8 ? 'spinner' : typ & 2 ? 'slider' : 'circle', hs: +p[4] || 0 };
     if (k === 0) { ci = 0; num = 0; } else if (typ & 4) { ci = (ci + 1 + ((typ >> 4) & 7)) % cols.length; num = 0; }
     if (o.kind !== 'spinner') num++;
     o.num = num; o.col = cols[ci]; o.end = o.t;
@@ -125,6 +125,7 @@ export function createReplay(text) {
       const parts = p[5].split('|');
       const pts = [[o.x, o.y], ...parts.slice(1).map((q) => q.split(':').map(Number))];
       o.slides = +p[6];
+      o.edges = p[8] ? p[8].split('|').map(Number) : null;
       Object.assign(o, sliderPath(parts[0], pts, +p[7]));
       o.span = (+p[7] / (sm * 100 * svAt(o.t))) * beatAt(o.t);
       o.end = o.t + o.span * o.slides;
@@ -155,6 +156,21 @@ export function createReplay(text) {
     o.sx = o.x - off; o.sy = o.y - off;
     if (o.path) { o.path = o.path.map(([a, b]) => [a - off, b - off]); }
   }
+  // hitsound events: { t, hs (bit flags: 2 whistle, 4 finish, 8 clap), tick, vol }
+  const volAt = (t) => { let v = 100; for (const p of d.timing) { if (p.t > t + 1) break; v = p.vol; } return v / 100; };
+  const tickRate = +d.diff.SliderTickRate || 1;
+  const events = [];
+  for (const o of objs) {
+    if (o.kind === 'circle') events.push({ t: o.t, hs: o.hs });
+    else if (o.kind === 'spinner') events.push({ t: o.end, hs: o.hs });
+    else {
+      for (let e = 0; e <= o.slides; e++) events.push({ t: o.t + e * o.span, hs: o.edges ? o.edges[e] || 0 : o.hs });
+      const L = o.cum[o.cum.length - 1], v = L / o.span, step = (beatAt(o.t) / tickRate) * v;
+      if (step > 0) for (let sp = 0; sp < o.slides; sp++) for (let s = step; s < L - 10; s += step) events.push({ t: o.t + sp * o.span + (sp % 2 ? L - s : s) / v, tick: true });
+    }
+  }
+  events.forEach((e) => { e.vol = volAt(e.t); });
+  events.sort((a, b) => a.t - b.t);
   const first = objs[0]?.t || 0, last = Math.max(...objs.map((o) => o.end));
   const kiai = d.timing.find((t) => t.kiai && t.t > first + 8000);
   const start = Math.max(first - 500, (kiai ? kiai.t : first + (last - first) * 0.35) - 1500);
@@ -262,5 +278,6 @@ export function createReplay(text) {
     ctx.restore();
   }
 
-  return { draw, start, first, last, objects: objs.length };
+  const preview = +d.general.PreviewTime >= 0 ? +d.general.PreviewTime : null; // where the 10s osu! preview audio starts
+  return { draw, start, first, last, events, preview, objects: objs.length };
 }
