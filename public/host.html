@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guess the Beatmap · Host</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 60px; display: grid; gap: 18px; grid-template-columns: 1fr 380px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 34px; }
+  h2 { margin: 0 0 12px; font-family: Heavy; letter-spacing: .08em; text-transform: uppercase; font-size: 15px; color: var(--yellow); }
+  textarea { width: 100%; min-height: 150px; background: #15151b; border: 2px solid var(--line); border-radius: 12px; padding: 12px; resize: vertical; }
+  select { background: #15151b; border: 2px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+  input[type=number], input[type=text] { background: #15151b; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr.cur td { background: rgba(255,170,80,.08); }
+  td img { width: 92px; height: 32px; object-fit: cover; border-radius: 6px; display: block; }
+  td .t { font-weight: 700; } td .a { color: var(--muted); font-size: 12px; }
+  .phase { font-family: Galaxy; font-size: 30px; color: var(--orange); }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .controls .btn { width: 100%; }
+  .answer { background: #15151b; border-radius: 12px; padding: 12px; margin: 10px 0; }
+  .answer b { color: var(--yellow); }
+  .feed { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; }
+  .feed div { display: flex; gap: 8px; align-items: center; }
+  .feed img { width: 26px; height: 26px; border-radius: 50%; }
+  .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; font-size: 13px; color: var(--muted); }
+  .msg { min-height: 20px; font-size: 14px; }
+  .icon { padding: 4px 8px; border-radius: 8px; border: 0; background: var(--panel-2); cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 class="title-grad">GUESS THE BEATMAP · HOST</h1>
+    <div class="row"><a class="btn pink" href="/screen" target="_blank">Open projector screen ↗</a><span id="who" class="pill"></span></div>
+  </header>
+
+  <div id="gate" class="card hidden" style="grid-column:1/-1">
+    <p id="gateMsg"></p>
+    <a class="btn" href="/api/auth/login?next=/host">Sign in with osu!</a>
+  </div>
+
+  <section id="left" class="hidden" style="display:flex;flex-direction:column;gap:18px">
+    <div class="card">
+      <h2>Add maps</h2>
+      <p class="muted" style="margin-top:0;font-size:14px">One per line: a beatmapset ID, an osu! beatmap link, or search text like <i>xi FREEDOM DiVE</i> (picks the most-played match). Check the results below and fix any that picked the wrong map.</p>
+      <textarea id="lines" placeholder="xi FREEDOM DiVE&#10;https://osu.ppy.sh/beatmapsets/39804&#10;41823"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="add">Look up &amp; add</button>
+        <button class="btn ghost" id="famous">Fill with famous maps</button>
+        <button class="btn ghost" id="niche">Fill with niche maps</button>
+        <span class="msg" id="addMsg"></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Questions (<span id="qn">0</span>)</h2><div class="row"><button class="btn small ghost" id="mix">Mix round types</button><button class="btn small ghost" id="shuffle">Shuffle</button><button class="btn small" id="save">Save changes</button></div></div>
+      <p class="muted" style="font-size:13px">Extra accepted answers go in "Also accept" (comma separated), e.g. an English title or common nickname.</p>
+      <div style="overflow:auto"><table><thead><tr><th>#</th><th></th><th>Map</th><th>Round type</th><th>Mapper</th><th>SR</th><th>Also accept</th><th></th></tr></thead><tbody id="qs"></tbody></table></div>
+      <div class="msg" id="saveMsg"></div>
+    </div>
+  </section>
+
+  <aside id="right" class="hidden" style="display:flex;flex-direction:column;gap:18px">
+    <div class="card">
+      <h2>Game</h2>
+      <div class="phase" id="phase">Lobby</div>
+      <div class="muted" id="sub"></div>
+      <div class="answer" id="answer">No question running</div>
+      <div class="controls">
+        <button class="btn" id="next">Start game</button>
+        <button class="btn ghost" id="reveal">Reveal now</button>
+        <button class="btn ghost" id="lb">Show leaderboard</button>
+        <button class="btn ghost" id="end">End game</button>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn small danger" id="reset">Reset game</button><span class="msg muted" id="ctlMsg"></span></div>
+    </div>
+    <div class="card">
+      <h2>Live</h2>
+      <div class="muted" id="liveCount"></div>
+      <div class="feed" id="feed"></div>
+    </div>
+    <div class="card">
+      <h2>Settings</h2>
+      <div class="settings">
+        <label>Seconds to answer<input type="number" id="sDur" min="10" max="180"></label>
+        <label>Hint 2 / 3 at (s)<input type="text" id="sStages" placeholder="15, 30"></label>
+        <label>Guesses per question<input type="number" id="sGuess" min="1" max="10"></label>
+        <label>Countdown (s)<input type="number" id="sCd" min="0" max="10"></label>
+        <label>Max points<input type="number" id="sMax"></label>
+        <label>Min points (at buzzer)<input type="number" id="sMin"></label>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn small" id="sSave">Save settings</button><span class="msg muted" id="sMsg"></span></div>
+    </div>
+  </aside>
+</main>
+
+<script type="module">
+import { api, $, esc, fmtSec } from '/common.js';
+
+const FAMOUS = `xi FREEDOM DiVE
+The Quick Brown Fox The Big Black
+Will Stetson Harumachi Clover
+DragonForce Through the Fire and Flames
+Camellia Exit This Earth's Atomosphere
+Kurokotei Galaxy Collapse
+Imperial Circus Dead Decadence Uta
+xi Blue Zenith
+Panda Eyes Teminite Highscore
+KANA-BOON Silhouette
+Halozy Genryuu Kaiko
+Function Phantom Neuronecia
+VINXIS Sidetracked Day
+LeaF Aleph-0
+sakuzyo Altale
+TheFatRat Mayday
+GYZE HONESTY
+Camellia Ghost
+YOASOBI Yoru ni Kakeru
+Kurousa-P Senbonzakura
+Lite Show Magic Crack Traxxxx
+Toby Fox MEGALOVANIA
+Hatsune Miku Ievan Polkka
+cYsmix Peer Gynt
+Nanahira Bassdrop Freaks`;
+
+const NICHE = `Laur Sound Chimera
+Camellia Flamewall
+Camellia crystallized
+Silentroom Nhelv
+Team Grimoire C18H27NO3
+Team Grimoire Grimoire of Crimson
+t+pazolite Oshama Scramble
+Frums Credits
+Feryquitous Arcology on Permafrost
+xi Parousia
+Tokyo Machine PLAY
+MYTH & ROID L.L.L.
+Will Stetson KOALA
+DJ Okawari Flower Dance
+Kobaryo Villain Virus
+sakuzyo Imprinting
+DM DOKURO Reality Check Through the Skull
+LeaF Wizdomiot
+LeaF Doppelganger
+REOL No title
+Kano Stella-rium
+Mili world.execute(me);
+Mili Nine Point Eight
+Panda Eyes Colorblind`;
+
+let Q = [], L = null, armed = null;
+
+async function init() {
+  const me = await api('/api/me');
+  if (!me.user || !me.host) {
+    $('#gate').classList.remove('hidden');
+    $('#gateMsg').textContent = me.user ? `Signed in as ${me.user.username}, but that account isn't a host. Add your osu! ID to HOST_OSU_IDS.` : 'Sign in with the host osu! account.';
+    return;
+  }
+  $('#who').innerHTML = `<img class="avatar" style="width:22px;height:22px" src="${esc(me.user.avatar)}"> ${esc(me.user.username)}`;
+  $('#left').classList.remove('hidden'); $('#right').classList.remove('hidden');
+  Q = (await api('/api/host/questions')).questions;
+  renderQs();
+  await live();
+  const st = L.state.settings;
+  $('#sDur').value = st.duration; $('#sStages').value = st.stages.slice(1).join(', '); $('#sGuess').value = st.maxGuesses;
+  $('#sCd').value = st.countdown; $('#sMax').value = st.maxPoints; $('#sMin').value = st.minPoints;
+  setInterval(live, 1000);
+}
+
+function renderQs() {
+  $('#qn').textContent = Q.length;
+  const cur = L?.state?.qIndex;
+  $('#qs').innerHTML = Q.map((q, i) => `<tr class="${i === cur ? 'cur' : ''}">
+    <td>${i + 1}</td>
+    <td><img src="https://assets.ppy.sh/beatmaps/${q.setId}/covers/card.jpg" alt=""></td>
+    <td><div class="t">${esc(q.title)}</div><div class="a">${esc(q.artist)} · <a href="https://osu.ppy.sh/beatmapsets/${q.setId}" target="_blank">${q.setId}</a></div></td>
+    <td><select class="qtype" data-i="${i}">${[['audio', '🎧 Audio'], ['replay', '🎮 Replay'], ['score', '🏆 Score screen']].map(([v, n]) => `<option value="${v}" ${(q.type || 'audio') === v ? 'selected' : ''} ${v === 'score' && !q.score ? 'disabled' : ''}>${n}</option>`).join('')}</select>${!q.score ? '<div class="a">no leaderboard score</div>' : ''}</td>
+    <td>${esc(q.creator)}</td><td>${q.sr?.toFixed?.(2) ?? ''}</td>
+    <td><input type="text" data-i="${i}" class="alias" value="${esc((q.aliases || []).join(', '))}" placeholder="optional"></td>
+    <td style="white-space:nowrap"><button class="icon" data-up="${i}">↑</button> <button class="icon" data-down="${i}">↓</button> <button class="icon" data-del="${i}">✕</button></td></tr>`).join('');
+}
+
+$('#qs').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const i = Number(b.dataset.up ?? b.dataset.down ?? b.dataset.del);
+  if (b.dataset.del != null) Q.splice(i, 1);
+  if (b.dataset.up != null && i > 0) [Q[i - 1], Q[i]] = [Q[i], Q[i - 1]];
+  if (b.dataset.down != null && i < Q.length - 1) [Q[i + 1], Q[i]] = [Q[i], Q[i + 1]];
+  renderQs(); $('#saveMsg').textContent = 'Unsaved changes';
+});
+$('#qs').addEventListener('change', (e) => {
+  if (!e.target.classList.contains('qtype')) return;
+  Q[e.target.dataset.i].type = e.target.value;
+  $('#saveMsg').textContent = 'Unsaved changes';
+});
+$('#qs').addEventListener('input', (e) => {
+  if (!e.target.classList.contains('alias')) return;
+  Q[e.target.dataset.i].aliases = e.target.value.split(',').map((x) => x.trim()).filter(Boolean);
+  $('#saveMsg').textContent = 'Unsaved changes';
+});
+// Rotate audio → replay → score through the list (skipping score where a map has no leaderboard score)
+$('#mix').onclick = () => {
+  const cyc = ['audio', 'replay', 'score'];
+  Q.forEach((q, i) => { let t = cyc[i % 3]; if (t === 'score' && !q.score) t = 'replay'; q.type = t; });
+  renderQs(); $('#saveMsg').textContent = 'Unsaved changes';
+};
+$('#shuffle').onclick = () => { for (let i = Q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [Q[i], Q[j]] = [Q[j], Q[i]]; } renderQs(); $('#saveMsg').textContent = 'Unsaved changes'; };
+$('#save').onclick = async () => {
+  try { Q = (await api('/api/host/questions', { method: 'PUT', body: { questions: Q } })).questions; renderQs(); $('#saveMsg').textContent = 'Saved ✓'; }
+  catch (e) { $('#saveMsg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+};
+$('#famous').onclick = () => { $('#lines').value = FAMOUS; };
+$('#niche').onclick = () => { $('#lines').value = NICHE; };
+$('#add').onclick = async () => {
+  const lines = $('#lines').value;
+  if (!lines.trim()) return;
+  $('#add').disabled = true; $('#addMsg').textContent = 'Looking up on osu!… (about 1s per map)';
+  try {
+    const r = await api('/api/host/questions', { method: 'POST', body: { lines } });
+    Q = r.questions; renderQs();
+    $('#addMsg').innerHTML = `Added ${r.added}.` + (r.errors.length ? ` <span class="error">${r.errors.map(esc).join(' · ')}</span>` : '');
+    if (!r.errors.length) $('#lines').value = '';
+  } catch (e) { $('#addMsg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  finally { $('#add').disabled = false; }
+};
+
+async function control(action, extra = {}) {
+  try { await api('/api/host/control', { method: 'POST', body: { action, ...extra } }); $('#ctlMsg').textContent = ''; await live(); }
+  catch (e) { $('#ctlMsg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+}
+$('#next').onclick = () => control('next');
+$('#reveal').onclick = () => control('reveal');
+$('#lb').onclick = () => control('leaderboard');
+$('#end').onclick = () => control('end');
+$('#reset').onclick = () => {
+  if (armed !== 'reset') { armed = 'reset'; $('#reset').textContent = 'Click again to wipe scores'; setTimeout(() => { armed = null; $('#reset').textContent = 'Reset game'; }, 3000); return; }
+  armed = null; $('#reset').textContent = 'Reset game'; control('reset');
+};
+$('#sSave').onclick = async () => {
+  const stages = [0, ...$('#sStages').value.split(',').map((x) => Number(x.trim())).filter((x) => x > 0)];
+  await control('settings', { settings: { duration: $('#sDur').value, stages, maxGuesses: $('#sGuess').value, countdown: $('#sCd').value, maxPoints: $('#sMax').value, minPoints: $('#sMin').value } });
+  $('#sMsg').textContent = 'Saved ✓ (applies from the next question)';
+};
+
+async function live() {
+  try { L = await api('/api/host/live'); } catch (e) { $('#ctlMsg').innerHTML = `<span class="error">${esc(e.message)}</span>`; return; }
+  const s = L.state, q = L.question;
+  const names = { lobby: 'Lobby', question: 'Question', reveal: 'Reveal', leaderboard: 'Leaderboard', ended: 'Ended' };
+  $('#phase').textContent = names[s.phase] || s.phase;
+  $('#sub').textContent = s.qIndex >= 0 ? `Question ${s.qIndex + 1} of ${L.total} · ${L.players.length} players` : `${L.players.length} players joined · ${L.total} questions ready`;
+  $('#answer').innerHTML = q && s.phase !== 'lobby' ? `Answer: <b>${esc(q.title)}</b><br><span class="muted">${esc(q.artist)} · ${esc(q.creator)}</span>` : 'No question running';
+  const last = s.qIndex + 1 >= L.total;
+  $('#next').textContent = s.phase === 'lobby' ? 'Start game' : s.phase === 'ended' ? 'Game over' : last ? 'Finish (final results)' : 'Next question';
+  $('#next').disabled = s.phase === 'ended' || !L.total;
+  $('#reveal').disabled = s.phase !== 'question';
+  $('#liveCount').textContent = s.phase === 'question' || s.phase === 'reveal' ? `${L.correct.length} correct · ${L.answered} guessed` : '';
+  $('#feed').innerHTML = (s.phase === 'question' || s.phase === 'reveal' ? L.correct : []).map((p) => `<div><img src="${esc(p.avatar || '')}" alt=""> ${esc(p.username)} <span class="muted">${fmtSec(p.t)} · +${p.pts}</span></div>`).join('');
+  document.querySelectorAll('#qs tr').forEach((tr, i) => tr.classList.toggle('cur', i === s.qIndex));
+}
+
+init().catch((e) => { $('#gate').classList.remove('hidden'); $('#gateMsg').textContent = e.message; });
+</script>
+</body>
+</html>

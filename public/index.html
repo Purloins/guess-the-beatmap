@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1c24">
+<title>Guess the Beatmap</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  main { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; padding: 20px 16px 40px; min-height: 100dvh; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .me { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .me b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .logo { font-size: 30px; line-height: 1.05; text-align: center; margin: 24px 0 8px; }
+  .center { text-align: center; }
+  .big { font-size: 22px; }
+  .timer { height: 10px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+  .timer > i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--pink), var(--orange)); transform-origin: left; }
+  .pips { display: flex; gap: 8px; justify-content: center; }
+  .pips span { padding: 4px 10px; border-radius: 99px; background: var(--panel-2); color: var(--muted); font-size: 12px; }
+  .pips span.on { background: var(--orange); color: #241a12; }
+  form { display: flex; flex-direction: column; gap: 10px; }
+  input[type=text] { width: 100%; padding: 16px; font-size: 20px; border-radius: 14px; border: 2px solid var(--line); background: #15151b; outline: none; }
+  input[type=text]:focus { border-color: var(--orange); }
+  .feedback { min-height: 26px; text-align: center; font-weight: 700; }
+  .ok { color: var(--green); } .close { color: var(--yellow); } .bad { color: var(--red); }
+  .score-big { font-size: 56px; }
+  ol.lb { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  ol.lb li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--panel-2); }
+  ol.lb li.mine { box-shadow: inset 0 0 0 2px var(--orange); }
+  ol.lb .r { width: 28px; font-family: Heavy; color: var(--yellow); }
+  ol.lb .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ol.lb .s { font-family: Heavy; }
+  .guesses { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .guesses s { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<main>
+  <header id="hdr" class="hidden">
+    <div class="me"><img id="av" class="avatar" alt=""><b id="name"></b></div>
+    <span class="pill"><span class="heavy" style="font-size:11px">Score</span> <b id="myScore">0</b></span>
+  </header>
+
+  <div class="logo title-grad">GUESS THE<br>BEATMAP</div>
+
+  <section id="v-login" class="card center hidden">
+    <p class="big">Guess the song from the hints on the big screen.</p>
+    <p class="muted">Sign in with your osu! account to play. Your username shows on the leaderboard.</p>
+    <a class="btn" href="/api/auth/login?next=/">Sign in with osu!</a>
+    <p id="loginErr" class="error"></p>
+  </section>
+
+  <section id="v-lobby" class="card center hidden">
+    <p class="big">You're in! 🎉</p>
+    <p class="muted">Watch the big screen. Each round shows the song, gameplay, or a top score, then more hints like the map's stats. Type the <b>song title</b> here as fast as you can.</p>
+    <p><span class="pill"><b id="pc">0</b> players joined</span></p>
+  </section>
+
+  <section id="v-count" class="card center hidden">
+    <div class="heavy muted">Question <span class="qn"></span></div>
+    <div class="galaxy score-big pop" id="cd">3</div>
+    <p class="muted">Get ready…</p>
+  </section>
+
+  <section id="v-q" class="card hidden" style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="heavy muted">Question <span class="qn"></span> <span id="qType" style="color:var(--pink)"></span></span>
+      <b id="secs"></b>
+    </div>
+    <div class="timer"><i id="bar"></i></div>
+    <div class="pips" id="pips"></div>
+    <form id="f" autocomplete="off">
+      <input id="g" type="text" placeholder="Song title…" maxlength="120" enterkeyhint="send" autocapitalize="off" spellcheck="false">
+      <button class="btn" id="send">Guess</button>
+    </form>
+    <div class="feedback" id="fb"></div>
+    <div class="guesses" id="gl"></div>
+    <div id="done" class="center hidden">
+      <div class="galaxy ok score-big pop" id="ptsBig"></div>
+      <p>Correct! Wait for the reveal on the big screen.</p>
+    </div>
+    <div id="out" class="center hidden"><p class="bad big">No guesses left 😔</p><p class="muted">Wait for the reveal.</p></div>
+    <div id="timeup" class="center hidden"><p class="big">Time's up!</p><p class="muted">Watch the big screen for the answer.</p></div>
+  </section>
+
+  <section id="v-reveal" class="card center hidden">
+    <div class="heavy muted">The answer was</div>
+    <img id="rvCover" alt="" style="width:100%;border-radius:12px;margin:10px 0;aspect-ratio:2/1;object-fit:cover">
+    <div class="galaxy big" id="rvTitle"></div>
+    <div class="muted" id="rvArtist"></div>
+    <p id="rvMe" class="big"></p>
+  </section>
+
+  <section id="v-lb" class="card hidden">
+    <div class="heavy muted center" id="lbHead">Leaderboard</div>
+    <p class="center big" id="myRank"></p>
+    <ol class="lb" id="lb"></ol>
+  </section>
+
+  <p class="center muted" style="margin-top:auto;font-size:13px" id="foot"></p>
+</main>
+
+<script type="module">
+import { api, syncClock, now, $, esc, stageOf } from '/common.js';
+
+let me = null, state = null, my = null, lastKey = '';
+const views = ['login', 'lobby', 'count', 'q', 'reveal', 'lb'];
+const show = (v) => views.forEach((x) => $('#v-' + x).classList.toggle('hidden', x !== v));
+
+if (new URLSearchParams(location.search).get('error')) $('#loginErr').textContent = 'Sign-in failed, please try again.';
+
+async function loadMe() {
+  my = await api('/api/me');
+  me = my.user;
+  $('#hdr').classList.toggle('hidden', !me);
+  if (me) {
+    $('#av').src = me.avatar || '';
+    $('#name').textContent = me.username;
+    $('#myScore').textContent = my.score;
+    $('#foot').innerHTML = `Not you? <a href="/api/auth/logout">Sign out</a>`;
+  }
+}
+
+async function poll() {
+  try {
+    const s = await api('/api/state');
+    syncClock(s.serverNow);
+    const key = `${s.phase}:${s.qIndex}`;
+    state = s;
+    if (key !== lastKey) { lastKey = key; await loadMe(); onPhase(); }
+    render();
+  } catch (e) { $('#foot').textContent = 'Reconnecting…'; }
+}
+
+function onPhase() {
+  $('#fb').textContent = '';
+  $('#g').value = '';
+  renderAnswer(my?.qIndex === state.qIndex ? my.answer : null);
+}
+
+function renderAnswer(a) {
+  const max = state?.settings?.maxGuesses ?? 3;
+  const g = a?.guesses || [];
+  $('#gl').innerHTML = g.filter((_, i) => !(a?.ok && i === g.length - 1)).map((x) => `<span class="pill"><s>${esc(x)}</s></span>`).join('');
+  $('#done').classList.toggle('hidden', !a?.ok);
+  if (a?.ok) $('#ptsBig').textContent = `+${a.pts}`;
+  const out = !a?.ok && g.length >= max;
+  $('#out').classList.toggle('hidden', !out);
+  $('#f').classList.toggle('hidden', !!a?.ok || out);
+  $('#send').textContent = g.length ? `Guess (${max - g.length} left)` : 'Guess';
+}
+
+function render() {
+  if (!me) return show('login');
+  const s = state;
+  $('#pc').textContent = s.players;
+  document.querySelectorAll('.qn').forEach((e) => (e.textContent = `${s.qIndex + 1} / ${s.total}`));
+  if (s.phase === 'lobby') return show('lobby');
+  if (s.phase === 'question') {
+    const t = now();
+    if (t < s.startsAt) { show('count'); $('#cd').textContent = Math.ceil((s.startsAt - t) / 1000); return; }
+    show('q');
+    $('#qType').textContent = { replay: '· 🎮 Replay', score: '· 🏆 Score screen' }[s.type] || '· 🎧 Audio';
+    const total = s.deadline - s.startsAt, left = Math.max(0, s.deadline - t);
+    $('#bar').style.transform = `scaleX(${left / total})`;
+    $('#secs').textContent = `${Math.ceil(left / 1000)}s`;
+    const st = stageOf(s, t);
+    $('#pips').innerHTML = (s.settings?.stages || []).map((_, i) => `<span class="${i <= st ? 'on' : ''}">Hint ${i + 1}</span>`).join('');
+    const up = left <= 0;
+    $('#timeup').classList.toggle('hidden', !up || !!my?.answer?.ok);
+    if (up) $('#f').classList.add('hidden');
+    return;
+  }
+  if (s.phase === 'reveal' && s.reveal) {
+    show('reveal');
+    $('#rvCover').src = s.reveal.cover;
+    $('#rvTitle').textContent = s.reveal.title;
+    $('#rvArtist').textContent = `${s.reveal.artist} · mapped by ${s.reveal.creator}`;
+    const a = my?.qIndex === s.qIndex ? my.answer : null;
+    $('#rvMe').innerHTML = a?.ok ? `<span class="ok">You got it! +${a.pts}</span>` : `<span class="muted">Better luck next one!</span>`;
+    return;
+  }
+  if (s.phase === 'leaderboard' || s.phase === 'ended') {
+    show('lb');
+    $('#lbHead').textContent = s.phase === 'ended' ? 'Final results' : 'Leaderboard';
+    $('#myRank').innerHTML = my?.rank ? `You're <b class="galaxy" style="color:var(--yellow)">#${my.rank}</b> of ${my.ranked} with <b>${my.score}</b> pts` : '';
+    $('#lb').innerHTML = (s.leaderboard || []).map((p) => `<li class="${p.id === me.id ? 'mine' : ''}"><span class="r">${p.rank}</span><img class="avatar" src="${esc(p.avatar || '')}" alt=""><span class="n">${esc(p.username)}</span><span class="s">${p.score}</span></li>`).join('');
+  }
+}
+
+$('#f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const guess = $('#g').value.trim();
+  if (!guess || !state) return;
+  $('#send').disabled = true;
+  try {
+    const r = await api('/api/answer', { method: 'POST', body: { guess, qIndex: state.qIndex } });
+    if (my) { my.answer = r.answer; my.qIndex = state.qIndex; }
+    const fb = $('#fb');
+    if (r.result === 'correct') { fb.innerHTML = ''; $('#myScore').textContent = (my.score += r.answer.pts); }
+    else if (r.result === 'close') { fb.innerHTML = '<span class="close">So close! Check your spelling.</span>'; $('#g').classList.add('shake'); }
+    else if (r.result === 'wrong') { fb.innerHTML = '<span class="bad">Nope!</span>'; $('#g').classList.add('shake'); }
+    setTimeout(() => $('#g').classList.remove('shake'), 400);
+    if (r.result !== 'correct') $('#g').select();
+    renderAnswer(r.answer);
+  } catch (err) {
+    $('#fb').innerHTML = `<span class="bad">${esc(err.message)}</span>`;
+  } finally { $('#send').disabled = false; }
+});
+
+await loadMe();
+await poll();
+setInterval(poll, 1500);
+setInterval(() => state && render(), 250);
+</script>
+</body>
+</html>

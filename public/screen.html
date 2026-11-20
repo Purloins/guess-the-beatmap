@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guess the Beatmap · Screen</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/qrcode.js"></script>
+<style>
+  html, body { overflow: hidden; height: 100%; }
+  /* fixed 16:9 stage scaled to fit any window/projector */
+  #stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center; overflow: hidden; background: var(--bg); }
+  .layer { position: absolute; inset: 0; }
+  #bg { position: absolute; inset: -80px; background: center / cover no-repeat; transition: filter 1.2s ease, opacity .8s; opacity: 0; }
+  #bgDim { background: radial-gradient(ellipse at center, rgba(28,28,36,.35), rgba(28,28,36,.85)); }
+  .v { position: absolute; inset: 0; display: none; }
+  .v.on { display: block; }
+  h1.logo { font-size: 120px; line-height: 1; margin: 0; text-align: center; }
+  .heavyL { font-family: Heavy; letter-spacing: .12em; text-transform: uppercase; }
+
+  /* lobby */
+  #v-lobby .wrap { position: absolute; inset: 90px 120px; display: grid; grid-template-columns: 1fr 520px; gap: 80px; align-items: center; }
+  #qr { background: #fff; border-radius: 28px; padding: 28px; width: 520px; height: 520px; display: grid; place-items: center; }
+  #qr img, #qr svg { width: 100%; height: 100%; image-rendering: pixelated; }
+  .joinurl { font-family: Heavy; font-size: 44px; color: var(--yellow); margin-top: 18px; text-align: center; }
+  .avwall { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; max-height: 300px; overflow: hidden; justify-content: center; }
+  .avwall .p { display: flex; align-items: center; gap: 10px; background: rgba(38,38,49,.85); padding: 8px 16px 8px 8px; border-radius: 999px; font-size: 24px; animation: pop .4s both; }
+  .avwall .p img { width: 44px; height: 44px; border-radius: 50%; }
+
+  /* question */
+  .topbar { position: absolute; left: 70px; right: 70px; top: 50px; display: flex; justify-content: space-between; align-items: center; }
+  .qlabel { font-size: 40px; color: var(--yellow); }
+  .pipsL { display: flex; gap: 14px; }
+  .pipsL span { font-family: Heavy; letter-spacing: .1em; font-size: 22px; padding: 10px 22px; border-radius: 99px; background: rgba(38,38,49,.85); color: var(--muted); transition: all .3s; }
+  .pipsL span.on { background: var(--orange); color: #241a12; transform: scale(1.06); }
+  #ring { position: absolute; right: 70px; bottom: 60px; width: 200px; height: 200px; }
+  #ring text { font-family: Galaxy; font-size: 64px; fill: #fff; }
+  .hints { position: absolute; left: 70px; bottom: 60px; right: 520px; display: flex; flex-direction: column; gap: 22px; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; }
+  .stat { background: rgba(20,20,27,.85); border: 2px solid rgba(255,255,255,.18); border-radius: 18px; padding: 12px 22px; min-width: 150px; text-align: center; animation: pop .4s both; }
+  .stat b { display: block; font-family: Galaxy; font-size: 46px; }
+  .stat span { font-family: Heavy; letter-spacing: .12em; font-size: 16px; color: var(--muted); }
+  .shape { font-family: Heavy; font-size: 54px; letter-spacing: .08em; white-space: pre-wrap; color: #fff; text-shadow: 0 4px 0 rgba(0,0,0,.5); animation: pop .5s both; }
+  .mapper { font-size: 30px; animation: pop .4s both; }
+  .mapper b { font-family: Galaxy; color: var(--orange); font-size: 40px; }
+  .feed { position: absolute; right: 70px; top: 150px; width: 420px; bottom: 300px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  .feed .count { font-family: Heavy; letter-spacing: .1em; font-size: 22px; color: var(--muted); }
+  .feed .p { display: flex; align-items: center; gap: 12px; background: rgba(38,38,49,.9); border-radius: 14px; padding: 8px 14px; font-size: 24px; animation: pop .35s both; }
+  .feed .p img { width: 40px; height: 40px; border-radius: 50%; }
+  .feed .p .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed .p .t { color: var(--green); font-family: Heavy; font-size: 18px; }
+  .note { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); text-align: center; }
+  .note .galaxy { font-size: 140px; }
+  .listen { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font-size: 160px; opacity: .9; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.12); } }
+
+  /* reveal */
+  #v-reveal .box { position: absolute; left: 90px; bottom: 90px; right: 90px; display: grid; grid-template-columns: 1fr 520px; gap: 60px; align-items: end; }
+  #rvTitle { font-size: 104px; line-height: 1.05; }
+  #rvArtist { font-size: 40px; font-family: Heavy; margin-top: 12px; }
+  #rvMeta { font-size: 30px; color: var(--muted); margin-top: 8px; }
+  #rvMeta b { color: var(--orange); font-family: Galaxy; }
+  .fast { background: rgba(20,20,27,.88); border-radius: 22px; padding: 22px; }
+  .fast h3 { margin: 0 0 12px; font-family: Heavy; letter-spacing: .1em; font-size: 22px; color: var(--yellow); }
+  .fast .p { display: flex; align-items: center; gap: 12px; font-size: 26px; padding: 6px 0; }
+  .fast .p img { width: 42px; height: 42px; border-radius: 50%; }
+  .fast .p .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* leaderboard */
+  #v-lb .wrap { position: absolute; inset: 70px 300px; }
+  #v-lb h2 { font-size: 90px; margin: 0 0 30px; text-align: center; }
+  .rows { display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; align-items: center; gap: 22px; background: rgba(38,38,49,.92); border-radius: 18px; padding: 12px 26px; font-size: 34px; animation: pop .4s both; }
+  .row .r { width: 70px; font-family: Galaxy; color: var(--yellow); font-size: 44px; }
+  .row img { width: 56px; height: 56px; border-radius: 50%; }
+  .row .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .s { font-family: Galaxy; font-size: 44px; }
+  .row:nth-child(1) { box-shadow: inset 0 0 0 3px #f5d39c; } .row:nth-child(2) { box-shadow: inset 0 0 0 3px #c9ced8; } .row:nth-child(3) { box-shadow: inset 0 0 0 3px #cd8c5c; }
+
+  .hints.side { left: 36px; right: auto; top: 170px; bottom: auto; width: 330px; gap: 16px; }
+  .hints.side .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hints.side .stat { min-width: 0; padding: 8px 10px; }
+  .hints.side .stat b { font-size: 34px; }
+  .hints.side .shape { font-size: 30px; }
+  .hints.side .mapper { font-size: 22px; } .hints.side .mapper b { font-size: 30px; }
+  .feed.side { right: 24px; width: 340px; }
+  #game { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+  .typeTag { font-family: Heavy; letter-spacing: .12em; font-size: 22px; padding: 10px 20px; border-radius: 99px; background: rgba(242,123,160,.9); color: #2a1220; margin-right: 14px; }
+  #scoreCard { position: absolute; left: 90px; top: 125px; width: 1060px; background: rgba(20,20,27,.92); border-radius: 30px; box-shadow: 0 0 0 2px rgba(255,255,255,.12) inset; padding: 34px 44px; display: grid; grid-template-columns: 250px 1fr; gap: 10px 44px; align-items: center; animation: pop .5s both; }
+  #scoreCard .grade { grid-row: span 3; width: 250px; height: 250px; border-radius: 50%; display: grid; place-items: center; font-family: Galaxy; font-size: 150px; box-shadow: 0 0 0 10px rgba(255,255,255,.08) inset; }
+  #scoreCard .sc { font-family: Galaxy; font-size: 92px; line-height: 1; letter-spacing: .02em; }
+  #scoreCard .line { display: flex; gap: 40px; font-size: 30px; }
+  #scoreCard .line b { font-family: Galaxy; font-size: 46px; display: block; }
+  #scoreCard .line span { font-family: Heavy; letter-spacing: .12em; font-size: 16px; color: var(--muted); }
+  #scoreCard .hits { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 10px; }
+  #scoreCard .hit { background: rgba(255,255,255,.05); border-radius: 18px; padding: 12px; text-align: center; }
+  #scoreCard .hit b { font-family: Galaxy; font-size: 50px; display: block; }
+  #scoreCard .hit span { font-family: Heavy; font-size: 20px; letter-spacing: .1em; }
+  #scoreCard .who { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; font-size: 32px; margin-top: 12px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.1); }
+  #scoreCard .who img { width: 72px; height: 72px; border-radius: 16px; }
+  #scoreCard .mods { display: flex; gap: 8px; }
+  #scoreCard .mods i { font-style: normal; font-family: Heavy; font-size: 20px; padding: 6px 12px; border-radius: 10px; background: var(--orange); color: #241a12; }
+  #enable { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0,0,0,.75); cursor: pointer; font-size: 28px; }
+  #err { position: fixed; left: 12px; bottom: 10px; z-index: 11; color: var(--red); font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="stars"></div>
+  <div class="layer"><div id="bg"></div></div>
+  <div class="layer" id="bgDim"></div>
+
+  <section class="v" id="v-lobby">
+    <div class="wrap">
+      <div>
+        <h1 class="logo title-grad">GUESS THE<br>BEATMAP</h1>
+        <p style="text-align:center;font-size:34px;margin-top:40px">Scan to join, sign in with <b style="color:var(--pink)">osu!</b>, then type the song title on your phone.</p>
+        <p style="text-align:center;font-size:30px" class="muted"><b id="pc" style="color:#fff;font-size:44px">0</b> players joined</p>
+        <div class="avwall" id="wall"></div>
+      </div>
+      <div><div id="qr"></div><div class="joinurl" id="joinUrl"></div></div>
+    </div>
+  </section>
+
+  <section class="v" id="v-count">
+    <div class="note"><div class="heavyL" style="font-size:40px;color:var(--muted)">Question</div><div class="galaxy title-grad" id="cdQ" style="font-size:220px"></div><div class="galaxy" id="cd" style="font-size:80px"></div></div>
+  </section>
+
+  <section class="v" id="v-q">
+    <canvas id="game" width="1920" height="1080" class="hidden"></canvas>
+    <div id="scoreCard" class="hidden"></div>
+    <div class="topbar"><div class="qlabel galaxy"><span class="typeTag hidden" id="typeTag"></span><span id="qLabel"></span></div><div class="pipsL" id="pips"></div></div>
+    <div class="listen" id="listen">🎧</div>
+    <div class="feed"><div class="count" id="ansCount"></div><div id="feed"></div></div>
+    <div class="hints">
+      <div class="mapper hidden" id="hMapper"></div>
+      <div class="shape hidden" id="hShape"></div>
+      <div class="stats hidden" id="hStats"></div>
+    </div>
+    <svg id="ring" viewBox="0 0 200 200"><circle cx="100" cy="100" r="88" fill="rgba(20,20,27,.85)" stroke="rgba(255,255,255,.15)" stroke-width="12"/><circle id="arc" cx="100" cy="100" r="88" fill="none" stroke="url(#gr)" stroke-width="12" stroke-linecap="round" transform="rotate(-90 100 100)" stroke-dasharray="553" stroke-dashoffset="0"/><defs><linearGradient id="gr"><stop offset="0" stop-color="#ffd66b"/><stop offset="1" stop-color="#f27ba0"/></linearGradient></defs><text x="100" y="122" text-anchor="middle" id="secs">45</text></svg>
+    <div class="note hidden" id="timeup"><div class="galaxy title-grad">TIME'S UP!</div></div>
+  </section>
+
+  <section class="v" id="v-reveal">
+    <div class="box">
+      <div>
+        <div class="heavyL muted" style="font-size:26px">The answer is…</div>
+        <div class="title-grad" id="rvTitle"></div>
+        <div id="rvArtist"></div>
+        <div id="rvMeta"></div>
+      </div>
+      <div class="fast"><h3 id="rvPct"></h3><div id="rvFast"></div></div>
+    </div>
+  </section>
+
+  <section class="v" id="v-lb">
+    <div class="wrap"><h2 class="title-grad" id="lbTitle">LEADERBOARD</h2><div class="rows" id="rows"></div></div>
+  </section>
+</div>
+<div id="enable">🔊 Click anywhere to start the screen (enables audio)</div>
+<div id="err"></div>
+
+<script type="module">
+import { api, syncClock, now, $, esc, fmtLen, fmtSec, stageOf } from '/common.js';
+import { createReplay } from '/replay.js';
+let replay = null, replayKey = '';
+const typeOf = () => L?.question?.type || 'audio';
+const GRADE = { XH: ['SS', '#dfe6ee'], X: ['SS', '#ffd66b'], SH: ['S', '#dfe6ee'], S: ['S', '#ffd66b'], A: ['A', '#88da20'], B: ['B', '#4fc3f7'], C: ['C', '#b07cf0'], D: ['D', '#ff6b6b'] };
+function scoreCard(q) {
+  const sc = q.score;
+  if (!sc) return '<div style="grid-column:1/-1;font-size:34px">No leaderboard score found for this map.</div>';
+  const [g, gc] = GRADE[sc.grade] || [sc.grade || '?', '#fff'];
+  const flag = sc.country ? `<img src="https://osu.ppy.sh/images/flags/${esc(sc.country)}.png" style="width:44px;height:30px;border-radius:4px" alt="">` : '';
+  return `<div class="grade" style="color:${gc};background:radial-gradient(circle, rgba(255,255,255,.08), rgba(0,0,0,.3))">${esc(g)}</div>
+    <div class="sc">${Number(sc.score).toLocaleString('en-US')}</div>
+    <div class="line"><div><span>ACCURACY</span><b>${sc.accuracy.toFixed(2)}%</b></div><div><span>MAX COMBO</span><b>${sc.combo}x${q.maxCombo ? `<small style="font-size:28px;color:var(--muted)"> / ${q.maxCombo}x</small>` : ''}</b></div>${sc.pp ? `<div><span>PP</span><b>${sc.pp}</b></div>` : ''}</div>
+    <div class="mods">${(sc.mods.length ? sc.mods : ['NM']).map((m) => `<i>${esc(m)}</i>`).join('')}</div>
+    <div class="hits"><div class="hit"><span style="color:#66ccff">300</span><b>${sc.n300}</b></div><div class="hit"><span style="color:#88da20">100</span><b>${sc.n100}</b></div><div class="hit"><span style="color:#ffd66b">50</span><b>${sc.n50}</b></div><div class="hit"><span style="color:#ff6b6b">MISS</span><b>${sc.miss}</b></div></div>
+    <div class="who"><img src="${esc(sc.avatar)}" alt="">${flag}<b>${esc(sc.player)}</b><span class="muted" style="margin-left:auto">#1 on the leaderboard · ${esc(sc.date)}</span></div>`;
+}
+function loop() {
+  requestAnimationFrame(loop);
+  if (!replay || typeOf() !== 'replay' || L?.state?.phase !== 'question') return;
+  const s = L.state, t = now();
+  if (t < s.startsAt) return;
+  let gt = replay.start + Math.min(t, s.deadline) - s.startsAt;
+  if (gt > replay.last + 1500) gt = replay.first - 500 + ((gt - replay.first) % (replay.last + 1500 - replay.first)); // loop the map if it ends
+  const ctx = $('#game').getContext('2d');
+  ctx.clearRect(0, 0, 1920, 1080);
+  replay.draw(ctx, 1920, 1080, gt);
+}
+requestAnimationFrame(loop);
+
+const stage = $('#stage');
+const fit = () => { const k = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `translate(-50%, -50%) scale(${k})`; };
+addEventListener('resize', fit); fit();
+
+const audio = new Audio();
+audio.preload = 'auto';
+let L = null, key = '', lastStage = -2, stopAt = null, autoRevealSent = '';
+const BLUR = [42, 22, 9];           // background blur per hint stage (px)
+const CLIP = [4, 8, 0];             // seconds of audio per stage (0 = whole preview, looped)
+const show = (v) => document.querySelectorAll('.v').forEach((x) => x.classList.toggle('on', x.id === 'v-' + v));
+
+$('#enable').onclick = () => { $('#enable').remove(); audio.play().then(() => audio.pause()).catch(() => {}); };
+
+const joinUrl = location.origin.replace(/^https?:\/\//, '');
+$('#joinUrl').textContent = joinUrl;
+try { const qr = qrcode(0, 'M'); qr.addData(location.origin + '/'); qr.make(); $('#qr').innerHTML = qr.createSvgTag({ scalable: true, margin: 0 }); } catch { $('#qr').textContent = location.origin; }
+
+function playClip(k) {
+  if (!L?.question) return;
+  audio.currentTime = 0;
+  audio.loop = CLIP[k] === 0;
+  stopAt = CLIP[k] ? CLIP[k] : null;
+  audio.play().catch(() => {});
+}
+audio.ontimeupdate = () => { if (stopAt && audio.currentTime >= stopAt) audio.pause(); };
+
+function setBg(blur, visible = true) {
+  const bg = $('#bg');
+  bg.style.filter = `blur(${blur}px) saturate(${blur ? 1.15 : 1})`;
+  bg.style.opacity = visible ? 1 : 0;
+}
+
+async function poll() {
+  try {
+    L = await api('/api/host/live');
+    syncClock(L.serverNow);
+    $('#err').textContent = '';
+    const s = L.state, k = `${s.phase}:${s.qIndex}`;
+    if (k !== key) { key = k; onPhase(); }
+  } catch (e) {
+    $('#err').innerHTML = e.status === 401 || e.status === 403 ? `Host sign-in needed: <a href="/api/auth/login?next=/screen">sign in</a>` : esc(e.message);
+  }
+}
+
+function onPhase() {
+  const s = L.state;
+  lastStage = -2;
+  if (L.question && (s.phase === 'question' || s.phase === 'reveal')) {
+    const media = `q=${s.qIndex}&v=${L.question.setId}`;
+    if (!audio.src.includes(media)) { audio.src = `/api/hint?kind=audio&${media}`; audio.load(); }
+    $('#bg').style.backgroundImage = `url(/api/hint?kind=bg&${media})`;
+  }
+  if (s.phase === 'question' && L.question) {
+    const type = typeOf();
+    setBg(BLUR[0], false);
+    audio.pause();
+    ['hMapper', 'hShape', 'hStats'].forEach((id) => $('#' + id).classList.add('hidden'));
+    $('#game').classList.toggle('hidden', type !== 'replay');
+    $('#scoreCard').classList.toggle('hidden', type !== 'score');
+    $('#typeTag').classList.toggle('hidden', type === 'audio');
+    document.querySelector('.hints').classList.toggle('side', type === 'replay');
+    document.querySelector('.feed').classList.toggle('side', type === 'replay');
+    $('#typeTag').textContent = type === 'replay' ? '🎮 REPLAY' : type === 'score' ? '🏆 SCORE SCREEN' : '';
+    if (type === 'score') $('#scoreCard').innerHTML = scoreCard(L.question);
+    if (type === 'replay' && replayKey !== key) {
+      replayKey = key; replay = null;
+      $('#game').getContext('2d').clearRect(0, 0, 1920, 1080);
+      fetch(`/api/hint?kind=osu&q=${s.qIndex}`, { credentials: 'same-origin' }).then((r) => (r.ok ? r.text() : Promise.reject(new Error('Could not load the map'))))
+        .then((txt) => { replay = createReplay(txt); }).catch((e) => { $('#err').textContent = e.message; });
+    }
+  }
+  if (s.phase === 'reveal' && L.question) {
+    $('#game').classList.add('hidden'); $('#scoreCard').classList.add('hidden');
+    setBg(0, true);
+    playClip(2);
+  }
+  if (s.phase === 'lobby') { setBg(0, false); audio.pause(); }
+  if (s.phase === 'leaderboard' || s.phase === 'ended') { setBg(14, true); }
+}
+
+function render() {
+  if (!L) return;
+  const s = L.state, q = L.question, t = now();
+  if (s.phase === 'lobby') {
+    show('lobby');
+    $('#pc').textContent = L.players.length;
+    const wall = $('#wall'), have = new Set([...wall.children].map((x) => x.dataset.id));
+    for (const p of L.players.slice(-60)) if (!have.has(p.id)) wall.insertAdjacentHTML('beforeend', `<div class="p" data-id="${esc(p.id)}"><img src="${esc(p.avatar || '')}" alt="">${esc(p.username)}</div>`);
+    return;
+  }
+  if (s.phase === 'question' && q) {
+    if (t < s.startsAt) { show('count'); $('#cdQ').textContent = s.qIndex + 1; $('#cd').textContent = Math.ceil((s.startsAt - t) / 1000); return; }
+    show('q');
+    const total = s.deadline - s.startsAt, left = Math.max(0, s.deadline - t);
+    $('#arc').style.strokeDashoffset = 553 * (1 - left / total);
+    $('#secs').textContent = Math.ceil(left / 1000);
+    $('#qLabel').textContent = `QUESTION ${s.qIndex + 1} / ${L.total}`;
+    const st = stageOf(s, t);
+    $('#pips').innerHTML = (s.settings?.stages || []).map((_, i) => `<span class="${i <= st ? 'on' : ''}">HINT ${i + 1}</span>`).join('');
+    if (st !== lastStage && st >= 0 && left > 0) {
+      lastStage = st;
+      if (typeOf() === 'audio') {
+        setBg(BLUR[Math.min(st, BLUR.length - 1)], true);
+        playClip(Math.min(st, CLIP.length - 1));
+      }
+      if (st >= 1) {
+        $('#hStats').innerHTML = [['BPM', q.bpm], ['Length', fmtLen(q.length)], ['★ SR', q.sr.toFixed(2)], ['CS', q.cs], ['AR', q.ar], ['OD', q.od]]
+          .map(([k, v], i) => `<div class="stat" style="animation-delay:${i * 0.08}s"><span>${k.toUpperCase()}</span><b>${esc(v ?? '–')}</b></div>`).join('');
+        $('#hStats').classList.remove('hidden');
+      }
+      if (st >= 2) {
+        $('#hMapper').innerHTML = `Mapped by <b>${esc(q.creator)}</b> · artist starts with <b>${esc((q.artist || '?')[0])}</b>`;
+        $('#hShape').textContent = q.shape;
+        $('#hMapper').classList.remove('hidden'); $('#hShape').classList.remove('hidden');
+      }
+    }
+    $('#listen').classList.toggle('hidden', st >= 1 || typeOf() !== 'audio');
+    $('#ansCount').textContent = `${L.correct.length} got it · ${L.answered} guessing`;
+    const feedHtml = L.correct.slice(0, 9).map((p) => `<div class="p"><img src="${esc(p.avatar || '')}" alt=""><span class="n">${esc(p.username)}</span><span class="t">${fmtSec(p.t)}</span></div>`).join('');
+    if ($('#feed').dataset.h !== feedHtml) { $('#feed').dataset.h = feedHtml; $('#feed').innerHTML = feedHtml; }
+    const up = left <= 0;
+    $('#timeup').classList.toggle('hidden', !up);
+    if (up) { audio.pause(); if (autoRevealSent !== key && t > s.deadline + 1500) { autoRevealSent = key; api('/api/host/control', { method: 'POST', body: { action: 'reveal' } }).catch(() => {}); } }
+    return;
+  }
+  if (s.phase === 'reveal' && q) {
+    show('reveal');
+    $('#rvTitle').textContent = q.title;
+    $('#rvArtist').textContent = q.artist;
+    $('#rvMeta').innerHTML = `[${esc(q.version)}] · mapped by <b>${esc(q.creator)}</b>`;
+    const pct = L.players.length ? Math.round((100 * L.correct.length) / Math.max(1, L.answered || L.players.length)) : 0;
+    $('#rvPct').textContent = `${L.correct.length} got it${L.answered ? ` (${pct}% of guessers)` : ''} · fastest`;
+    $('#rvFast').innerHTML = L.correct.slice(0, 5).map((p, i) => `<div class="p"><b class="galaxy" style="color:var(--yellow);width:34px">${i + 1}</b><img src="${esc(p.avatar || '')}" alt=""><span class="n">${esc(p.username)}</span><span class="muted">${fmtSec(p.t)} · +${p.pts}</span></div>`).join('') || '<div class="muted" style="font-size:24px">Nobody got this one!</div>';
+    return;
+  }
+  if (s.phase === 'leaderboard' || s.phase === 'ended') {
+    show('lb');
+    $('#lbTitle').textContent = s.phase === 'ended' ? 'FINAL RESULTS' : 'LEADERBOARD';
+    const html = L.leaderboard.map((p, i) => `<div class="row" style="animation-delay:${i * 0.06}s"><span class="r">${p.rank}</span><img src="${esc(p.avatar || '')}" alt=""><span class="n">${esc(p.username)}</span><span class="s">${p.score}</span></div>`).join('');
+    if ($('#rows').dataset.k !== key) { $('#rows').dataset.k = key; $('#rows').innerHTML = html || '<div class="muted" style="text-align:center;font-size:30px">No scores yet</div>'; }
+  }
+}
+
+await poll();
+setInterval(poll, 1000);
+setInterval(render, 100);
+</script>
+</body>
+</html>

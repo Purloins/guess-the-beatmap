@@ -1,0 +1,11 @@
+{
+  "name": "guess-the-beatmap",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Live audience quiz: guess the osu! beatmap from staged hints. Players sign in with osu! and type answers on their phones.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "node dev/server.js"
+  }
+}
