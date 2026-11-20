@@ -1,7 +1,7 @@
 import { requireHost, readBody, handler } from '../../lib/http.js';
 import { getQuestions, getState } from '../../lib/game.js';
 import { setJSON } from '../../lib/redis.js';
-import { resolveLine } from '../../lib/osu.js';
+import { resolveLine, api, toQuestion } from '../../lib/osu.js';
 
 // GET: list. POST {lines, mode:'append'|'replace'}: look maps up on osu!. PUT {questions}: save an edited list.
 export default handler(async (req, res) => {
@@ -14,6 +14,19 @@ export default handler(async (req, res) => {
     if (state.phase !== 'lobby' && state.phase !== 'ended') return res.status(409).json({ error: 'Reset the game before editing the map list' });
     await setJSON('questions', body.questions || []);
     return res.json({ questions: body.questions || [] });
+  }
+  if (req.method === 'POST' && body.refresh) {
+    const qs = await getQuestions(), errors = [];
+    for (let i = 0; i < qs.length; i++) {
+      try {
+        const set = await api(`/beatmapsets/${qs[i].setId}`);
+        if (!set) throw new Error(`${qs[i].title}: not found`);
+        const fresh = await toQuestion(set, qs[i].beatmapId);
+        qs[i] = { ...fresh, type: qs[i].type || 'audio', aliases: qs[i].aliases || [] };
+      } catch (e) { errors.push(e.message); }
+    }
+    await setJSON('questions', qs);
+    return res.json({ questions: qs, errors, added: 0 });
   }
   if (req.method === 'POST') {
     const lines = String(body.lines || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 60);

@@ -59,7 +59,7 @@
       </div>
     </div>
     <div class="card">
-      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Questions (<span id="qn">0</span>)</h2><div class="row"><button class="btn small ghost" id="mix">Mix round types</button><button class="btn small ghost" id="shuffle">Shuffle</button><button class="btn small" id="save">Save changes</button></div></div>
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Questions (<span id="qn">0</span>)</h2><div class="row"><button class="btn small ghost" id="refresh" title="Re-fetch IDs, stats and #1 scores from osu! for every map">Refresh map data</button><button class="btn small ghost" id="mix">Mix round types</button><button class="btn small ghost" id="shuffle">Shuffle</button><button class="btn small" id="save">Save changes</button></div></div>
       <p class="muted" style="font-size:13px">Extra accepted answers go in "Also accept" (comma separated), e.g. an English title or common nickname.</p>
       <div style="overflow:auto"><table><thead><tr><th>#</th><th></th><th>Map</th><th>Round type</th><th>Mapper</th><th>SR</th><th>Also accept</th><th></th></tr></thead><tbody id="qs"></tbody></table></div>
       <div class="msg" id="saveMsg"></div>
@@ -205,6 +205,15 @@ $('#qs').addEventListener('input', (e) => {
   Q[e.target.dataset.i].aliases = e.target.value.split(',').map((x) => x.trim()).filter(Boolean);
   $('#saveMsg').textContent = 'Unsaved changes';
 });
+$('#refresh').onclick = async () => {
+  $('#refresh').disabled = true; $('#saveMsg').textContent = 'Refreshing from osu!… (about 1s per map)';
+  try {
+    const r = await api('/api/host/questions', { method: 'POST', body: { refresh: true } });
+    Q = r.questions; renderQs();
+    $('#saveMsg').innerHTML = 'Map data refreshed ✓' + (r.errors.length ? ` <span class="error">${r.errors.map(esc).join(' · ')}</span>` : '');
+  } catch (e) { $('#saveMsg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  finally { $('#refresh').disabled = false; }
+};
 // Rotate audio → replay → score through the list (skipping score where a map has no leaderboard score)
 $('#mix').onclick = () => {
   const cyc = ['audio', 'replay', 'score'];

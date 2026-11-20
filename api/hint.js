@@ -1,6 +1,7 @@
 import { requireHost, handler } from '../lib/http.js';
 import { getQuestions } from '../lib/game.js';
-import { sanitizedOsu } from '../lib/osu.js';
+import { sanitizedOsu, api, toQuestion } from '../lib/osu.js';
+import { setJSON } from '../lib/redis.js';
 
 // Streams the current question's background or audio preview without exposing the beatmap ID in the URL.
 // Host-only, so nobody can look the answer up from the page source.
@@ -10,7 +11,14 @@ export default handler(async (req, res) => {
   const q = qs[Number(req.query.q)];
   if (!q) return res.status(404).json({ error: 'No such question' });
   if (req.query.kind === 'osu') {
-    if (!q.beatmapId) return res.status(404).json({ error: 'This question has no difficulty ID' });
+    if (!q.beatmapId) {
+      // Maps added by an older version have no difficulty ID: look it up once and save it
+      const set = await api(`/beatmapsets/${q.setId}`);
+      if (!set) return res.status(404).json({ error: 'Map not found on osu!' });
+      const fresh = await toQuestion(set);
+      Object.assign(q, { beatmapId: fresh.beatmapId, maxCombo: q.maxCombo || fresh.maxCombo, score: q.score || fresh.score });
+      await setJSON('questions', qs);
+    }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=600');
     return res.status(200).send(await sanitizedOsu(q.beatmapId));

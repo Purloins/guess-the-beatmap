@@ -129,6 +129,7 @@
   <section class="v" id="v-q">
     <canvas id="game" width="1920" height="1080" class="hidden"></canvas>
     <div id="scoreCard" class="hidden"></div>
+    <div class="note hidden" id="replayMsg" style="font-size:34px;max-width:1100px"></div>
     <div class="topbar"><div class="qlabel galaxy"><span class="typeTag hidden" id="typeTag"></span><span id="qLabel"></span></div><div class="pipsL" id="pips"></div></div>
     <div class="listen" id="listen">🎧</div>
     <div class="feed"><div class="count" id="ansCount"></div><div id="feed"></div></div>
@@ -258,10 +259,18 @@ function onPhase() {
     if (type === 'replay' && replayKey !== key) {
       replayKey = key; replay = null;
       $('#game').getContext('2d').clearRect(0, 0, 1920, 1080);
-      fetch(`/api/hint?kind=osu&q=${s.qIndex}`, { credentials: 'same-origin' }).then((r) => (r.ok ? r.text() : Promise.reject(new Error('Could not load the map'))))
-        .then((txt) => { replay = createReplay(txt); }).catch((e) => { $('#err').textContent = e.message; });
+      $('#replayMsg').classList.remove('hidden'); $('#replayMsg').textContent = 'Loading gameplay…';
+      const load = (tries) => fetch(`/api/hint?kind=osu&q=${s.qIndex}`, { credentials: 'same-origin' })
+        .then(async (r) => (r.ok ? r.text() : Promise.reject(new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`))))
+        .then((txt) => { replay = createReplay(txt); $('#replayMsg').classList.add('hidden'); })
+        .catch((e) => {
+          if (tries > 0 && replayKey === key) return setTimeout(() => load(tries - 1), 1500);
+          $('#replayMsg').innerHTML = `⚠️ Couldn't load gameplay for this map<br><span class="muted" style="font-size:24px">${esc(e.message)}</span>`;
+        });
+      load(2);
     }
   }
+  if (s.phase !== 'question') $('#replayMsg').classList.add('hidden');
   if (s.phase === 'reveal' && L.question) {
     $('#game').classList.add('hidden'); $('#scoreCard').classList.add('hidden');
     setBg(0, true);
