@@ -197,9 +197,10 @@ function loop() {
     replay.draw(ctx, 1920, 1080, gt);
     sound = t < s.deadline;
   } else if (ph === 'reveal') {
-    // in sync with the song: the preview audio starts at the map's preview point
-    const synced = replay.preview != null && !audio.paused && audio.currentTime > 0;
-    gt = synced ? replay.preview + audio.currentTime * 1000 : replay.start + (t - revealAt);
+    // in sync with the song: the server tells us the exact map time where the audio clip starts
+    const base = audioInfo.kind === 'full' ? audioInfo.start : replay.preview;
+    const synced = base != null && audioInfo.q === L.state.qIndex && !audio.paused && audio.currentTime > 0;
+    gt = synced ? base + audio.currentTime * 1000 : replay.start + (t - revealAt);
     ctx.clearRect(0, 0, 1920, 1080);
     ctx.fillStyle = 'rgba(12,12,18,.55)'; ctx.fillRect(0, 0, 1920, 1080);
     ctx.save(); ctx.translate(0, 30);
@@ -237,11 +238,35 @@ const joinUrl = location.origin.replace(/^https?:\/\//, '');
 $('#joinUrl').textContent = joinUrl;
 try { const qr = qrcode(0, 'M'); qr.addData(location.origin + '/'); qr.make(); $('#qr').innerHTML = qr.createSvgTag({ scalable: true, margin: 0 }); } catch { $('#qr').textContent = location.origin; }
 
+// Audio for the current question: the real song cut at a known time (or osu!'s preview as a fallback).
+let audioInfo = { q: -1, kind: null, start: null }, wantPlay = false, audioUrl = null;
+function loadAudio(qi, setId) {
+  if (audioInfo.q === qi) return;
+  audioInfo = { q: qi, kind: null, start: null };
+  audio.pause(); audio.removeAttribute('src'); audio.load();
+  const len = Math.max(60, (L?.state?.settings?.duration || 45) + 15) * 1000;
+  fetch(`/api/hint?kind=audio&q=${qi}&v=${setId}&len=${len}`, { credentials: 'same-origin' })
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`audio ${r.status}`);
+      const kind = r.headers.get('X-Audio-Kind') || 'preview';
+      const start = r.headers.get('X-Audio-Start');
+      const blob = await r.blob();
+      if (audioInfo.q !== qi) return;
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = URL.createObjectURL(blob);
+      audioInfo = { q: qi, kind, start: start != null ? Number(start) : null };
+      audio.src = audioUrl; audio.load();
+      if (wantPlay) { audio.currentTime = 0; audio.play().catch(() => {}); }
+    })
+    .catch((e) => { $('#err').textContent = `Audio: ${e.message}`; });
+}
 function playClip(k) {
   if (!L?.question) return;
-  audio.currentTime = 0;
+  wantPlay = true;
   audio.loop = CLIP[k] === 0;
   stopAt = CLIP[k] ? CLIP[k] : null;
+  if (!audio.src) return; // starts as soon as the download finishes
+  audio.currentTime = 0;
   audio.play().catch(() => {});
 }
 audio.ontimeupdate = () => { if (stopAt && audio.currentTime >= stopAt) audio.pause(); };
@@ -286,13 +311,19 @@ function onPhase() {
   lastStage = -2;
   if (L.question && (s.phase === 'question' || s.phase === 'reveal')) {
     const media = `q=${s.qIndex}&v=${L.question.setId}`;
-    if (!audio.src.includes(media)) { audio.src = `/api/hint?kind=audio&${media}`; audio.load(); }
-    $('#bg').style.backgroundImage = `url(/api/hint?kind=bg&${media})`;
+    loadAudio(s.qIndex, L.question.setId);
+    const bg = $('#bg'), url = `url("/api/hint?kind=bg&${media}")`;
+    if (bg.style.backgroundImage !== url) {
+      // hide instantly (no fade) before swapping images, so the next map's background never flashes
+      bg.style.transition = 'none'; bg.style.opacity = 0; void bg.offsetWidth;
+      bg.style.backgroundImage = url; bg.style.filter = `blur(${BLUR[0]}px)`; void bg.offsetWidth;
+      bg.style.transition = '';
+    }
   }
   if (s.phase === 'question' && L.question) {
     const type = typeOf();
     setBg(BLUR[0], false);
-    audio.pause();
+    audio.pause(); wantPlay = false;
     ['hMapper', 'hShape', 'hStats'].forEach((id) => $('#' + id).classList.add('hidden'));
     $('#game').classList.toggle('hidden', type !== 'replay');
     $('#scoreCard').classList.toggle('hidden', type !== 'score');
@@ -314,7 +345,7 @@ function onPhase() {
     $('#game').classList.remove('hidden');
   }
   if (s.phase !== 'question' && s.phase !== 'reveal') $('#game').classList.add('hidden');
-  if (s.phase === 'lobby') { setBg(0, false); audio.pause(); }
+  if (s.phase === 'lobby') { setBg(0, false); audio.pause(); wantPlay = false; }
   if (s.phase === 'leaderboard' || s.phase === 'ended') { setBg(14, true); }
 }
 
@@ -360,7 +391,7 @@ function render() {
     if ($('#feed').dataset.h !== feedHtml) { $('#feed').dataset.h = feedHtml; $('#feed').innerHTML = feedHtml; }
     const up = left <= 0;
     $('#timeup').classList.toggle('hidden', !up);
-    if (up) { audio.pause(); if (autoRevealSent !== key && t > s.deadline + 1500) { autoRevealSent = key; api('/api/host/control', { method: 'POST', body: { action: 'reveal' } }).catch(() => {}); } }
+    if (up) { audio.pause(); wantPlay = false; if (autoRevealSent !== key && t > s.deadline + 1500) { autoRevealSent = key; api('/api/host/control', { method: 'POST', body: { action: 'reveal' } }).catch(() => {}); } }
     return;
   }
   if (s.phase === 'reveal' && q) {

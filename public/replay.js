@@ -279,5 +279,41 @@ export function createReplay(text) {
   }
 
   const preview = +d.general.PreviewTime >= 0 ? +d.general.PreviewTime : null; // where the 10s osu! preview audio starts
-  return { draw, start, first, last, events, preview, objects: objs.length };
+  const hitTimes = objs.filter((o) => o.kind !== 'spinner').map((o) => o.t);
+  return { draw, start, first, last, events, preview, hitTimes, objects: objs.length };
+}
+
+// Find where in the map an audio clip starts by matching its drum/onset peaks to the note times.
+// samples: mono Float32Array, sr: sample rate, times: note times (ms), approx: expected start (ms) or null.
+// Returns the map time (ms) at audio t=0, or null if nothing matched convincingly.
+export function alignAudio(samples, sr, times, approx = null) {
+  const hop = Math.round(sr / 200); // 5ms frames
+  const n = Math.floor(samples.length / hop);
+  if (n < 400 || !times.length) return null;
+  // onset strength: positive change in short-time energy (log-compressed), lightly smoothed
+  const e = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let s = 0; for (let j = i * hop, k = j + hop; j < k; j++) s += samples[j] * samples[j]; e[i] = Math.log1p(1000 * s / hop); }
+  const env = new Float32Array(n);
+  for (let i = 1; i < n; i++) env[i] = Math.max(0, e[i] - e[i - 1]);
+  let mean = 0; for (const v of env) mean += v; mean /= n;
+  let sd = 0; for (const v of env) sd += (v - mean) ** 2; sd = Math.sqrt(sd / n) || 1;
+  const z = env.map((v) => (v - mean) / sd);
+  const at = (f) => { const i = Math.round(f); return Math.max(z[i - 1] ?? -9, z[i] ?? -9, z[i + 1] ?? -9); }; // ±5ms tolerance
+  const dur = (n * hop * 1000) / sr;
+  const lo = Math.max(times[0] - dur + 2000, -2000), hi = times[times.length - 1];
+  let best = null, second = -Infinity;
+  for (let s = lo; s <= hi; s += 5) {
+    let sum = 0, cnt = 0;
+    // binary search the first note inside [s, s + dur)
+    let a = 0, b = times.length;
+    while (a < b) { const m = (a + b) >> 1; if (times[m] < s + 30) a = m + 1; else b = m; }
+    for (let i = a; i < times.length && times[i] < s + dur - 30; i++) { sum += at((times[i] - s) / 5); cnt++; }
+    if (cnt < 8) continue;
+    let score = sum / Math.sqrt(cnt); // favours many well-aligned notes over a few lucky ones
+    if (approx != null && Math.abs(s - approx) < 400) score *= 1.05; // tiny nudge towards the preview point
+    if (!best || score > best.score) { if (best && Math.abs(s - best.s) > 60) second = Math.max(second, best.score); best = { s, score }; }
+    else if (Math.abs(s - best.s) > 60) second = Math.max(second, score);
+  }
+  if (!best) return null;
+  return { offset: best.s, confidence: best.score / Math.max(1e-6, second) };
 }

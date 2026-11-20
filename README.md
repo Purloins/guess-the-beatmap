@@ -6,6 +6,10 @@ A live audience quiz for PIT. The projector shows hints in stages and players ty
 - **`/screen`**: the projector. A QR code to join, staged hints, a live "who got it" feed, the reveal and the leaderboard.
 - **`/host`**: the control panel. Add maps, start/next/reveal, settings and live answers. It can run from your phone or laptop.
 
+## Audio
+
+The projector plays the **real song**, not just osu!'s 10-second preview. The server downloads the map from a beatmap mirror (catboy.best, then nerinyan.moe) and cuts about 60 seconds of the MP3, starting just before the preview point. It knows the exact map time where that clip starts, so the gameplay on the reveal stays synced to the music. Maps whose song is an `.ogg` file, or any download failure, fall back to osu!'s 10-second preview on a loop.
+
 ## Round types
 
 Pick a type per map in the host panel, or use **Mix round types** to rotate them through the list.

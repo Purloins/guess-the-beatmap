@@ -2,6 +2,7 @@ import { requireHost, handler } from '../lib/http.js';
 import { getQuestions } from '../lib/game.js';
 import { sanitizedOsu, api, toQuestion } from '../lib/osu.js';
 import { setJSON } from '../lib/redis.js';
+import { songSegment } from '../lib/audio.js';
 
 // Streams the current question's background or audio preview without exposing the beatmap ID in the URL.
 // Host-only, so nobody can look the answer up from the page source.
@@ -22,6 +23,20 @@ export default handler(async (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'private, max-age=600');
     return res.status(200).send(await sanitizedOsu(q.beatmapId));
+  }
+  if (req.query.kind === 'audio') {
+    // Prefer the real song (cut at a known map time, so gameplay can be synced to it); fall back to osu!'s 10s preview.
+    try {
+      const seg = await songSegment(q, Number(req.query.len) || 60000);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Audio-Kind', 'full');
+      res.setHeader('X-Audio-Start', String(Math.round(seg.start)));
+      res.setHeader('Cache-Control', 'private, max-age=600');
+      return res.status(200).send(Buffer.from(seg.data));
+    } catch (e) {
+      res.setHeader('X-Audio-Kind', 'preview');
+      res.setHeader('X-Audio-Note', String(e.message).slice(0, 120));
+    }
   }
   const PREVIEW = process.env.OSU_PREVIEW_BASE || 'https://b.ppy.sh';
   const ASSETS = process.env.OSU_ASSETS_BASE || 'https://assets.ppy.sh';

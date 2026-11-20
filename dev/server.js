@@ -16,6 +16,7 @@ if (MOCK) {
     KV_REST_API_URL: `${ORIGIN}/__redis`, KV_REST_API_TOKEN: 'mock',
     OSU_BASE: `${ORIGIN}/__osu`, OSU_PREVIEW_BASE: `${ORIGIN}/__media`, OSU_ASSETS_BASE: `${ORIGIN}/__media`,
     OSU_CLIENT_ID: '1', OSU_CLIENT_SECRET: 'x', INSECURE_COOKIES: '1', BASE_URL: ORIGIN,
+    OSZ_MIRROR_BASE: `${ORIGIN}/__mirror`,
   });
 }
 
@@ -111,6 +112,14 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(out));
     }
     if (MOCK && url.pathname.startsWith('/__osu')) return mockOsu(req, res, url, body);
+    if (MOCK && url.pathname.startsWith('/__mirror/d/')) {
+      // optional: MOCK_OSZ_DIR=folder of "<setId> Artist - Title.osz" files to test full-song audio offline
+      const id = url.pathname.match(/\/d\/(\d+)/)?.[1];
+      const dir = process.env.MOCK_OSZ_DIR;
+      const f = dir && id && fs.readdirSync(dir).find((x) => x.startsWith(id + ' ') && x.endsWith('.osz'));
+      if (!f) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end(fs.readFileSync(path.join(dir, f)));
+    }
     if (MOCK && url.pathname.startsWith('/__media')) {
       const m = url.pathname.match(/(?:preview|beatmaps)\/(-?\d+)(?:\.mp3|\/covers\/fullsize\.jpg)$/);
       const f = m && path.join(ROOT, 'dev/fixtures/media', `${m[1]}${url.pathname.endsWith('.mp3') ? '.mp3' : '.jpg'}`);
